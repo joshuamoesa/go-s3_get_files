@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io/ioutil"
+	"log"
+	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -26,7 +30,9 @@ type MyResponse struct {
 }
 
 func main() {
-	lambda.Start(HandleLambdaEvent)
+	//lambda.Start(HandleLambdaEvent)
+    //sendMetric()
+    //BucketChecker
 }
 
 //HandleLambdaEvent function
@@ -75,7 +81,7 @@ func Bucketchecker(bucket string, prefix string, delimiter string) {
 			keyArray := strings.Split(*item.Key, "/")
 			fmt.Print("File info: ")
 			fmt.Print("Name: ", keyArray[len(keyArray)-1], " ")
-			fmt.Print("modified at: ", (*item.LastModified).In(loc), " ")
+			fmt.Print("modified at: ", (*item.In(loc), " ")
 			fmt.Print("Size: ", *item.Size/1024, "KB ")
 			i++
 		}
@@ -87,4 +93,66 @@ func Bucketchecker(bucket string, prefix string, delimiter string) {
 func exitErrorf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
 	os.Exit(1)
+}
+
+func sendMetric() string {
+
+	//DataDog Joshua
+	os.Setenv("DD_API_KEY", "")
+	os.Setenv("DD_APPLICATION_KEY", "")
+	os.Setenv("DD_SITE", "eu")
+
+	//DataDog SBP
+	//os.Setenv("DD_API_KEY", "")
+	//os.Setenv("DD_APPLICATION_KEY", "")
+	//os.Setenv("DD_SITE", "com")
+
+	url := "https://api.datadoghq." + os.Getenv("DD_SITE") + "/api/v1/series?api_key=" + os.Getenv("DD_API_KEY")
+	//	url := "https://5d3ee046-b510-4184-9141-4fcf2011be95.mock.pstmn.io"
+
+	timestampMetrics := strconv.FormatInt(time.Now().Unix(), 10) // s == "97" (decimal)
+
+	var jsonStr = []byte(`{"series":[{"metric":"test.metric","points":[[` + timestampMetrics + `,10]],"type":"count","interval":1,"host":"test.example.com","tags":["environment:test"]}]}`)
+
+	// Build the request
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Add("DD-API-KEY", os.Getenv("DD_API_KEY"))
+	req.Header.Add("DD-APPLICATION-KEY", os.Getenv("DD_APPLICATION_KEY"))
+
+	if err != nil {
+		log.Fatal("NewRequest: ", err)
+		//return
+		os.Exit(1)
+	}
+
+	// For control over HTTP client headers,
+	// redirect policy, and other settings,
+	// create a Client
+	// A Client is an HTTP client
+	client := &http.Client{}
+
+	// Send the request via a client
+	// Do sends an HTTP request and
+	// returns an HTTP response
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatal("Do: ", err)
+		//return
+		os.Exit(1)
+	}
+
+	// Callers should close resp.Body
+	// when done reading from it
+	// Defer the closing of the body
+	defer resp.Body.Close()
+
+	fmt.Println(timestampMetrics)
+	fmt.Println("response Status:", resp.Status)
+	fmt.Println("response Headers:", resp.Header)
+	body, _ := ioutil.ReadAll(resp.Body)
+	fmt.Println("response Body:", string(body))
+
+	return "OK"
+
 }
