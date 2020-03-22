@@ -1,3 +1,7 @@
+// List content of a AWS S3 bucket or prefix,
+// filter out the oldest S3 object based on the LastModified attribute and
+// send the age in seconds of the object as a metric to Datadog.
+
 package main
 
 import (
@@ -8,60 +12,140 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
+	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
-//MyEvent struct
+// MyEvent represents a JSON inputmessage containing parameters.
 type MyEvent struct {
-	Bucket    string `json:"bucket"`
-	Prefix    string `json:"prefix"`
-	Delimiter string `json:"delimiter"`
+	Bucket      string `json:"bucket"`      // name of the bucket
+	Prefix      string `json:"prefix"`      // optional subfolder name within the bucket
+	Delimiter   string `json:"delimiter"`   // delimiter character, usually it's "/"
+	Environment string `json:"environment"` // environment value like pnlt, pnla or pnlp
+	MaxAgeSec   string `json:"max_age_sec"` // optional max age in seconds
 }
 
-//MyResponse struct
+// MyResponse represent the result coming back from the function.
 type MyResponse struct {
 	Message string `json:"result"`
 }
 
 func main() {
-	//lambda.Start(HandleLambdaEvent)
-    //sendMetric()
-    //BucketChecker
+	lambda.Start(HandleLambdaEvent)
+
+	/*
+			os.Setenv("BUCKET", "messagestore")
+			os.Setenv("PATH_PREFIX", "subfolder")
+			os.Setenv("DELIMITER", "")
+			os.Setenv("ENVIRONMENT", "pnlt")
+
+			bucketName := os.Getenv("BUCKET")
+			pathPrefixName := os.Getenv("PATH_PREFIX")
+			delimiterValue := os.Getenv("DELIMITER")
+			functionnameLambdaMetricParameter := "listS3Objects"
+			bucketnameMetricParameter := bucketName
+			environment := os.Getenv("ENVIRONMENT")
+
+			resp := ListBucketObjects(bucketName, pathPrefixName, delimiterValue)
+			fmt.Print("[main:INFO] AWS S3 response:\n" + resp.String() + "\n")
+
+			// assume first file lastmodified value is the smallest so it's the oldest file in seconds
+			min := resp.Contents[0].LastModified.UTC().Unix()
+			fmt.Print("[main:INFO] Initial oldest file: " + strconv.FormatInt(min, 10) + " \n")
+
+			if len(pathPrefixName) > 0 { //when a prefix has to be taken into account, take element 1 in stead of 0
+				min = resp.Contents[1].LastModified.UTC().Unix()
+				fmt.Print("[main:INFO] Oldest file in a prefix: " + strconv.FormatInt(min, 10) + " \n")
+				bucketnameMetricParameter = bucketnameMetricParameter + "_" + pathPrefixName
+			}
+
+			//lengthContents := strconv.Itoa(len(resp.Contents))
+			//fmt.Print("Total keys: " + lengthContents + "\n")
+
+			// Loop through the list to check if there are older files than the value in variable "min"
+			for i, item := range resp.Contents {
+				if len(pathPrefixName) > 0 && i == 0 { // Skip first element when dealing with prefix, assuming that the prefix is the first element
+					//ignore
+				} else {
+					lastModified := item.LastModified.UTC().Unix()
+					if lastModified < min {
+						//keyArray := strings.Split(*item.Key, "/")
+						//fmt.Print("Older file detected. Name: ", keyArray[len(keyArray)-1], " \n")
+						fmt.Print("[main:INFO] Older object detected. Value in posix timestamp (sec) format: " + strconv.FormatInt(lastModified, 10) + " \n")
+						min = lastModified
+					}
+				}
+			}
+
+		    CreateMetric(min, bucketnameMetricParameter, functionnameLambdaMetricParameter, environment)
+	*/
 }
 
-//HandleLambdaEvent function
+// HandleLambdaEvent is the Lambda handler signature and includes the code which will be executed.
 func HandleLambdaEvent(event MyEvent) (MyResponse, error) {
 
-	Bucketchecker(event.Bucket, event.Prefix, event.Delimiter)
+	bucketName := event.Bucket
+	pathPrefixName := event.Prefix
+	delimiterValue := event.Delimiter
+	functionnameLambdaMetricParameter := lambdacontext.FunctionName
+	bucketnameMetricParameter := bucketName
+	environment := os.Getenv("ENVIRONMENT")
 
-	return MyResponse{Message: fmt.Sprintf("%s with prefix %s is read", event.Bucket, event.Prefix)}, nil
-}
+	resp := ListBucketObjects(bucketName, pathPrefixName, delimiterValue)
+	fmt.Print("[main:INFO] AWS S3 response:" + resp.String() + "\n")
 
-// Bucketchecker function
-func Bucketchecker(bucket string, prefix string, delimiter string) {
+	// assume first file lastmodified value is the smallest so it's the oldest file in seconds
+	min := resp.Contents[0].LastModified.UTC().Unix()
+	fmt.Print("[main:INFO] Initial oldest file: " + strconv.FormatInt(min, 10) + " \n")
 
-	os.Setenv("BUCKET", "messagestore")
-	os.Setenv("PATH_PREFIX", "")
-	os.Setenv("TIMEZONE", "Europe/Rome")
-	os.Setenv("AWS_ACCESS_KEY_ID", "")
-	os.Setenv("AWS_SECRET_ACCESS_KEY", "")
-	os.Setenv("AWS_REGION", "eu-west-1")
-
-	// utc life
-	loc, err := time.LoadLocation(os.Getenv("TIMEZONE"))
-	if err != nil {
-		panic(err)
+	if len(pathPrefixName) > 0 { //when a prefix has to be taken into account, take element 1 in stead of 0
+		min = resp.Contents[1].LastModified.UTC().Unix()
+		fmt.Print("[main:INFO] Oldest file in a prefix: " + strconv.FormatInt(min, 10) + " \n")
+		bucketnameMetricParameter = bucketnameMetricParameter + "_" + pathPrefixName
 	}
 
+	/*
+	   lengthContents := strconv.Itoa(len(resp.Contents))
+	   //fmt.Print("Total keys: " + lengthContents + "\n")
+	*/
+
+	// Loop through the list to check if there are older files than the value in variable "min"
+	for i, item := range resp.Contents {
+		if len(pathPrefixName) > 0 && i == 0 { // Skip first element when dealing with prefix, assuming that the prefix is the first element
+			//ignore
+		} else {
+			lastModified := item.LastModified.UTC().Unix()
+			if lastModified < min {
+				//keyArray := strings.Split(*item.Key, "/")
+				//fmt.Print("Older file detected. Name: ", keyArray[len(keyArray)-1], " \n")
+				fmt.Print("[main:INFO] Older object detected. Value in posix timestamp (sec) format: " + strconv.FormatInt(lastModified, 10) + " \n")
+				min = lastModified
+			}
+		}
+	}
+
+	createMetricResult := CreateMetric(min, bucketnameMetricParameter, functionnameLambdaMetricParameter, environment)
+
+	return MyResponse{Message: fmt.Sprintf("S3 bucket %s with prefix %s is read. Result: %s", bucketName, pathPrefixName, createMetricResult)}, nil
+
+}
+
+// ListBucketObjects lists the AWS S3 bucket and/or prefix and returns a list of keys.
+func ListBucketObjects(bucket string, prefix string, delimiter string) *s3.ListObjectsV2Output {
+
+	awsAccessKey := os.Getenv("ESB_AWS_ACCESS_KEY_ID")
+	awsSecretAccessKey := os.Getenv("ESB_AWS_SECRET_ACCESS_KEY")
+	awsRegion := os.Getenv("ESB_AWS_REGION")
+
 	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(os.Getenv("AWS_REGION")),
-		Credentials: credentials.NewStaticCredentials(os.Getenv("AWS_ACCESS_KEY_ID"), os.Getenv("AWS_SECRET_ACCESS_KEY"), ""),
+		Region:      aws.String(awsRegion),
+		Credentials: credentials.NewStaticCredentials(awsAccessKey, awsSecretAccessKey, ""),
 	})
 
 	// Create S3 service client
@@ -70,49 +154,36 @@ func Bucketchecker(bucket string, prefix string, delimiter string) {
 	// Get the list of items
 	resp, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{Bucket: aws.String(bucket), Prefix: aws.String(prefix), Delimiter: aws.String(delimiter)})
 	if err != nil {
-		exitErrorf("[ERROR] Unable to list items in bucket %q, %v", bucket, err)
+		exitErrorf("[ListBucketObjects:ERROR] Unable to list items in bucket %q, %v", bucket, err)
 	}
 
-	i := 0
-	// Loop through the list
-	for _, item := range resp.Contents {
-		if *item.Size > int64(0) {
-			//fmt.Print(*item)
-			keyArray := strings.Split(*item.Key, "/")
-			fmt.Print("File info: ")
-			fmt.Print("Name: ", keyArray[len(keyArray)-1], " ")
-			fmt.Print("modified at: ", (*item.In(loc), " ")
-			fmt.Print("Size: ", *item.Size/1024, "KB ")
-			i++
-		}
-	}
+	return resp
 
-	fmt.Print("[INFO] File count: ", i, " ")
 }
 
-func exitErrorf(msg string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, msg+"\n", args...)
-	os.Exit(1)
-}
-
-func sendMetric() string {
-
-	//DataDog Joshua
-	os.Setenv("DD_API_KEY", "")
-	os.Setenv("DD_APPLICATION_KEY", "")
-	os.Setenv("DD_SITE", "eu")
-
-	//DataDog SBP
-	//os.Setenv("DD_API_KEY", "")
-	//os.Setenv("DD_APPLICATION_KEY", "")
-	//os.Setenv("DD_SITE", "com")
+// CreateMetric creates JSON formatted string which will be sent to Datadog as a metric.
+func CreateMetric(objectageSec int64, bucketName string, functionName string, environment string) string {
 
 	url := "https://api.datadoghq." + os.Getenv("DD_SITE") + "/api/v1/series?api_key=" + os.Getenv("DD_API_KEY")
-	//	url := "https://5d3ee046-b510-4184-9141-4fcf2011be95.mock.pstmn.io"
+	/* Postman mockservice url
+	   url := "https://5d3ee046-b510-4184-9141-4fcf2011be95.mock.pstmn.io"
+	*/
 
-	timestampMetrics := strconv.FormatInt(time.Now().Unix(), 10) // s == "97" (decimal)
+	timestamp := time.Now().Unix()
+	metricTimestamp := strconv.FormatInt(timestamp, 10)          // s == "97" (decimal)
+	metricValue := strconv.FormatInt(timestamp-objectageSec, 10) // s == "97" (decimal)
 
-	var jsonStr = []byte(`{"series":[{"metric":"test.metric","points":[[` + timestampMetrics + `,10]],"type":"count","interval":1,"host":"test.example.com","tags":["environment:test"]}]}`)
+	var jsonStr = []byte(`{"series":[{"metric":"esb.aws.s3.object.age.seconds","points":[[` +
+		metricTimestamp +
+		`,` +
+		metricValue +
+		`]],"type":"gauge","host":"` +
+		bucketName +
+		`","tags":["service:esb","function:` +
+		functionName +
+		`","environment:` +
+		environment +
+		`"]}]}`)
 
 	// Build the request
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
@@ -121,8 +192,7 @@ func sendMetric() string {
 	req.Header.Add("DD-APPLICATION-KEY", os.Getenv("DD_APPLICATION_KEY"))
 
 	if err != nil {
-		log.Fatal("NewRequest: ", err)
-		//return
+		log.Fatal("[CreateMetric:FATAL] NewRequest: ", err)
 		os.Exit(1)
 	}
 
@@ -137,8 +207,7 @@ func sendMetric() string {
 	// returns an HTTP response
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatal("Do: ", err)
-		//return
+		log.Fatal("[CreateMetric:FATAL] Do: ", err)
 		os.Exit(1)
 	}
 
@@ -147,12 +216,16 @@ func sendMetric() string {
 	// Defer the closing of the body
 	defer resp.Body.Close()
 
-	fmt.Println(timestampMetrics)
-	fmt.Println("response Status:", resp.Status)
-	fmt.Println("response Headers:", resp.Header)
+	fmt.Println("[CreateMetric:INFO] Metric value sent:", metricValue)
+	fmt.Println("[CreateMetric:INFO] Datadog Response Status:", resp.Status)
+	fmt.Println("[CreateMetric:INFO] Datadog Response Headers:", resp.Header)
 	body, _ := ioutil.ReadAll(resp.Body)
-	fmt.Println("response Body:", string(body))
+	fmt.Println("[CreateMetric:INFO] Datadog Response Body:", string(body))
 
 	return "OK"
+}
 
+func exitErrorf(msg string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, msg+"\n", args...)
+	os.Exit(1)
 }
