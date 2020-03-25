@@ -15,6 +15,18 @@ go run main.go\
 ```
 \
 Spin up the program by running ./start.sh\
-\
+
+## Build and package
+
+Build with
+```console
+GOOS=linux GOARCH=amd64 go build -o main main.go
+```
+
+Then package with
+```console
+zip main.zip main
+```
+
 Inspiration:\
 https://medium.com/emvi/configuring-golang-applications-using-environment-variables-abf7a76ae506
