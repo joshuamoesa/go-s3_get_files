@@ -47,30 +47,30 @@ func main() {
 	pathPrefixName := os.Getenv("PATH_PREFIX")
 	delimiterValue := os.Getenv("DELIMITER")
 	functionnameLambdaMetricParameter := "listS3Objects"
-	bucketnameMetricParameter := bucketName
 	environment := os.Getenv("ENVIRONMENT")
 
 	resp := ListBucketObjects(bucketName, pathPrefixName, delimiterValue)
-	fmt.Print("[main:INFO] AWS S3 response:\n" + resp.String() + "\n")
 
-	// assume first file lastmodified value is the smallest so it's the oldest file in seconds
-	min := resp.Contents[0].LastModified.UTC().Unix()
-	fmt.Print("[main:INFO] Initial oldest file: " + strconv.FormatInt(min, 10) + " \n")
+	if int64(*resp.KeyCount) > 0 { // When AWS S3 response contains keys, continue with logic
+		fmt.Print("[main:INFO] Processing AWS S3 response:\n" + resp.String() + "\n")
 
-	if len(pathPrefixName) > 0 && len(resp.Contents) > 1 { //when a prefix has to be taken into account, take element 1 in stead of 0
-		min = resp.Contents[1].LastModified.UTC().Unix()
-		fmt.Print("[main:INFO] Oldest file in a prefix: " + strconv.FormatInt(min, 10) + " \n")
-		bucketnameMetricParameter = bucketnameMetricParameter + "_" + pathPrefixName
-	}
+		// When we're dealing with a prefix, pop the first element from contents list
+		// Also rename the bucketnameMetricParameter
+		if len(pathPrefixName) > 0 {
+			resp.Contents = resp.Contents[1:]
+			bucketName = bucketName + "_" + pathPrefixName
+		}
 
-	//lengthContents := strconv.Itoa(len(resp.Contents))
-	//fmt.Print("Total keys: " + lengthContents + "\n")
+		// assume first key in the list is the oldest
+		min := resp.Contents[0].LastModified.UTC().Unix()
+		fmt.Print("[main:INFO] Initial oldest file: " + strconv.FormatInt(min, 10) + " \n")
 
-	// Loop through the list to check if there are older files than the value in variable "min"
-	for i, item := range resp.Contents {
-		if len(pathPrefixName) > 0 && i == 0 { // Skip first element when dealing with prefix, assuming that the prefix is the first element
-			//ignore
-		} else {
+		//lengthContents := strconv.Itoa(len(resp.Contents))
+		//fmt.Print("Total keys: " + lengthContents + "\n")
+		//fmt.Print("[main:INFO] Processing list\n" + resp.String() + "\n")
+
+		// Loop through the list to check if there are older files than the value in variable "min"
+		for _, item := range resp.Contents {
 			lastModified := item.LastModified.UTC().Unix()
 			if lastModified < min {
 				//keyArray := strings.Split(*item.Key, "/")
@@ -79,9 +79,12 @@ func main() {
 				min = lastModified
 			}
 		}
-	}
+		CreateMetric(min, bucketName, functionnameLambdaMetricParameter, environment)
 
-	CreateMetric(min, bucketnameMetricParameter, functionnameLambdaMetricParameter, environment)
+	} else {
+		fmt.Print("[main:INFO] No keys detected.")
+		//return 0
+	}
 
 }
 
@@ -92,7 +95,6 @@ func HandleLambdaEvent(event MyEvent) (MyResponse, error) {
 	pathPrefixName := event.Prefix
 	delimiterValue := event.Delimiter
 	functionnameLambdaMetricParameter := lambdacontext.FunctionName
-	bucketnameMetricParameter := bucketName
 	environment := event.Environment
 
 	resp := ListBucketObjects(bucketName, pathPrefixName, delimiterValue)
@@ -105,7 +107,7 @@ func HandleLambdaEvent(event MyEvent) (MyResponse, error) {
 	if len(pathPrefixName) > 0 { //when a prefix has to be taken into account, take element 1 in stead of 0
 		min = resp.Contents[1].LastModified.UTC().Unix()
 		fmt.Print("[main:INFO] Oldest file in a prefix: " + strconv.FormatInt(min, 10) + " \n")
-		bucketnameMetricParameter = bucketnameMetricParameter + "_" + pathPrefixName
+		bucketName = bucketName + "_" + pathPrefixName
 	}
 
 	/*
@@ -128,7 +130,7 @@ func HandleLambdaEvent(event MyEvent) (MyResponse, error) {
 		}
 	}
 
-	createMetricResult := CreateMetric(min, bucketnameMetricParameter, functionnameLambdaMetricParameter, environment)
+	createMetricResult := CreateMetric(min, bucketName, functionnameLambdaMetricParameter, environment)
 
 	return MyResponse{Message: fmt.Sprintf("S3 bucket %s with prefix %s is read. Result: %s", bucketName, pathPrefixName, createMetricResult)}, nil
 
