@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -37,54 +36,53 @@ type MyResponse struct {
 }
 
 func main() {
-	lambda.Start(HandleLambdaEvent)
+	//lambda.Start(HandleLambdaEvent)
 
-	/*
-			os.Setenv("BUCKET", "messagestore")
-			os.Setenv("PATH_PREFIX", "subfolder")
-			os.Setenv("DELIMITER", "")
-			os.Setenv("ENVIRONMENT", "pnlt")
+	os.Setenv("BUCKET", "messagestore")
+	os.Setenv("PATH_PREFIX", "subfolder")
+	os.Setenv("DELIMITER", "")
+	os.Setenv("ENVIRONMENT", "pnlt")
 
-			bucketName := os.Getenv("BUCKET")
-			pathPrefixName := os.Getenv("PATH_PREFIX")
-			delimiterValue := os.Getenv("DELIMITER")
-			functionnameLambdaMetricParameter := "listS3Objects"
-			bucketnameMetricParameter := bucketName
-			environment := os.Getenv("ENVIRONMENT")
+	bucketName := os.Getenv("BUCKET")
+	pathPrefixName := os.Getenv("PATH_PREFIX")
+	delimiterValue := os.Getenv("DELIMITER")
+	functionnameLambdaMetricParameter := "listS3Objects"
+	bucketnameMetricParameter := bucketName
+	environment := os.Getenv("ENVIRONMENT")
 
-			resp := ListBucketObjects(bucketName, pathPrefixName, delimiterValue)
-			fmt.Print("[main:INFO] AWS S3 response:\n" + resp.String() + "\n")
+	resp := ListBucketObjects(bucketName, pathPrefixName, delimiterValue)
+	fmt.Print("[main:INFO] AWS S3 response:\n" + resp.String() + "\n")
 
-			// assume first file lastmodified value is the smallest so it's the oldest file in seconds
-			min := resp.Contents[0].LastModified.UTC().Unix()
-			fmt.Print("[main:INFO] Initial oldest file: " + strconv.FormatInt(min, 10) + " \n")
+	// assume first file lastmodified value is the smallest so it's the oldest file in seconds
+	min := resp.Contents[0].LastModified.UTC().Unix()
+	fmt.Print("[main:INFO] Initial oldest file: " + strconv.FormatInt(min, 10) + " \n")
 
-			if len(pathPrefixName) > 0 { //when a prefix has to be taken into account, take element 1 in stead of 0
-				min = resp.Contents[1].LastModified.UTC().Unix()
-				fmt.Print("[main:INFO] Oldest file in a prefix: " + strconv.FormatInt(min, 10) + " \n")
-				bucketnameMetricParameter = bucketnameMetricParameter + "_" + pathPrefixName
+	if len(pathPrefixName) > 0 && len(resp.Contents) > 1 { //when a prefix has to be taken into account, take element 1 in stead of 0
+		min = resp.Contents[1].LastModified.UTC().Unix()
+		fmt.Print("[main:INFO] Oldest file in a prefix: " + strconv.FormatInt(min, 10) + " \n")
+		bucketnameMetricParameter = bucketnameMetricParameter + "_" + pathPrefixName
+	}
+
+	//lengthContents := strconv.Itoa(len(resp.Contents))
+	//fmt.Print("Total keys: " + lengthContents + "\n")
+
+	// Loop through the list to check if there are older files than the value in variable "min"
+	for i, item := range resp.Contents {
+		if len(pathPrefixName) > 0 && i == 0 { // Skip first element when dealing with prefix, assuming that the prefix is the first element
+			//ignore
+		} else {
+			lastModified := item.LastModified.UTC().Unix()
+			if lastModified < min {
+				//keyArray := strings.Split(*item.Key, "/")
+				//fmt.Print("Older file detected. Name: ", keyArray[len(keyArray)-1], " \n")
+				fmt.Print("[main:INFO] Older object detected. Value in posix timestamp (sec) format: " + strconv.FormatInt(lastModified, 10) + " \n")
+				min = lastModified
 			}
+		}
+	}
 
-			//lengthContents := strconv.Itoa(len(resp.Contents))
-			//fmt.Print("Total keys: " + lengthContents + "\n")
+	CreateMetric(min, bucketnameMetricParameter, functionnameLambdaMetricParameter, environment)
 
-			// Loop through the list to check if there are older files than the value in variable "min"
-			for i, item := range resp.Contents {
-				if len(pathPrefixName) > 0 && i == 0 { // Skip first element when dealing with prefix, assuming that the prefix is the first element
-					//ignore
-				} else {
-					lastModified := item.LastModified.UTC().Unix()
-					if lastModified < min {
-						//keyArray := strings.Split(*item.Key, "/")
-						//fmt.Print("Older file detected. Name: ", keyArray[len(keyArray)-1], " \n")
-						fmt.Print("[main:INFO] Older object detected. Value in posix timestamp (sec) format: " + strconv.FormatInt(lastModified, 10) + " \n")
-						min = lastModified
-					}
-				}
-			}
-
-		    CreateMetric(min, bucketnameMetricParameter, functionnameLambdaMetricParameter, environment)
-	*/
 }
 
 // HandleLambdaEvent is the Lambda handler signature and includes the code which will be executed.
@@ -95,7 +93,7 @@ func HandleLambdaEvent(event MyEvent) (MyResponse, error) {
 	delimiterValue := event.Delimiter
 	functionnameLambdaMetricParameter := lambdacontext.FunctionName
 	bucketnameMetricParameter := bucketName
-	environment := os.Getenv("ENVIRONMENT")
+	environment := event.Environment
 
 	resp := ListBucketObjects(bucketName, pathPrefixName, delimiterValue)
 	fmt.Print("[main:INFO] AWS S3 response:" + resp.String() + "\n")
