@@ -1,0 +1,30 @@
+{
+	"id": 17498952,
+	"name": "#S3-object-age-seconds on S3 GENERIC",
+	"type": "query alert",
+	"query": "avg(last_10m):avg:esb.aws.s3.object.age.seconds{environment:pnlp,!host:pnlp-esb-temp-message-store_esb-pes-medea-distributiemelding/} by {host} > 1500",
+	"message": "{{#is_recovery}}\n\nSituation recovered itself on host {{host.name}}\n\n@joshua.moesa@postnl.nl\n{{/is_recovery}}\n\n{{#is_warning}}\nWarning raised on {{last_triggered_at}} (UTC) because measured value {{eval \"int(value)\"}} exceeds the {{eval \"int(warn_threshold)\"}} seconds warn threshold on host: {{host.name}}\n\n@joshua.moesa@postnl.nl \n{{/is_warning}}\n\n\n{{#is_alert}}\n\n# Oops something's wrong here\n\nAn **ALERT** was raised on {{last_triggered_at}} (UTC) because on average the measured file age of {{eval \"int(value)\"}} seconds exceeds the {{eval \"int(warn_threshold)\"}} seconds threshold on host: {{host.name}}. \n\nBecause of the fact that the last 10 minutes no auto-recovery was detected, please carry out the following steps as soon as possible:\n1. Use the host value in the above message to determine the location of the S3 bucket and prefix. The syntax format is: <BUCKETNAME>_<PREFIXNAME>.\n2. Login into AWS and navigate to the S3 location.\n3. Use the Last modified column to check which S3 file exceeds the permitted age.\n4. Analyse the cause by looking into logs: BWCE logging in Splunk, AWS CloudWatch. Take corrective actions and log every action for future analysis.\n5. Rerun the process by downloading the file and uploading it again in the S3 bucket.\n6. Validate that the file is processed correctly.\n\nFor more info check this [Confluence](https://postnl.atlassian.net/wiki/spaces/ESB/overview) source.\n\n@joshua.moesa@postnl.nl \n{{/is_alert}}",
+	"tags": [
+		"service:esb"
+	],
+	"options": {
+		"notify_audit": true,
+		"locked": true,
+		"timeout_h": 1,
+		"new_host_delay": 300,
+		"require_full_window": true,
+		"notify_no_data": true,
+		"renotify_interval": 10,
+		"evaluation_delay": 30,
+		"escalation_message": "@joshua.moesa@postnl.nl",
+		"no_data_timeframe": 20,
+		"include_tags": true,
+		"thresholds": {
+			"critical": 1500,
+			"warning": 1200,
+			"critical_recovery": 1200,
+			"warning_recovery": 1000
+		}
+	},
+	"priority": null
+}
